@@ -1,0 +1,12 @@
+{application, arygon_nfc,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { arygon_nfc_app, []}},
+  {env, []}
+ ]}.
