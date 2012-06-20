@@ -11,6 +11,7 @@
 -behaviour(gen_server).
 
 %% API
+-export([start/0]).
 -export([start_link/0]).
 -export([start_link/1]).
 
@@ -19,8 +20,6 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
-
-%% "/dev/tty.SLAB_USBtoUART"
 
 -define(SERVER, ?MODULE). 
 
@@ -58,6 +57,9 @@ setopts(Opts) ->
 getopts(Opts) ->
     gen_server:call(?SERVER, {getopts,Opts}).
 
+start() ->
+    application:start(?MODULE).
+
 stop() ->
     gen_server:call(?SERVER, stop).    
 %%--------------------------------------------------------------------
@@ -68,7 +70,15 @@ stop() ->
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    start_link([]).
+    case application:get_env(arygon_nfc, device) of
+	{ok,Device} when is_list(Device) ->
+	    start_link([{device,Device}]);
+	undefined ->
+	    start_link([]);
+	Other ->
+	    io:format("warning: bad device value given [~p]\n", 
+		      [Other])
+    end.
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
@@ -89,7 +99,7 @@ start_link(Args) ->
 %% @end
 %%--------------------------------------------------------------------
 init(Args) ->
-    Device = proplists:get_value(device, Args, "/dev/tty.usbserial"),
+    Device = proplists:get_value(device, Args, "/dev/ttyUSB0"),
     Baud = proplists:get_value(baud, Args, 9600),
     Reopen_Timer = erlang:start_timer(100, self(), open_device),
     Reopen_Ival = proplists:get_value(reopen_ival, Args, 20*1000),
@@ -263,7 +273,7 @@ process_line(<<"FF0000",L1,L0,HexBinary/binary>>, State) ->
 notify(HexBinary, State) ->
     lists:foreach(
       fun(S) ->
-	      S#subscription.pid ! {nfc,self(),HexBinary}
+	      S#subscription.pid ! {nfc,S#subscription.mon,HexBinary}
       end, State#state.sub_list),
     State.
 
