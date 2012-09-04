@@ -174,9 +174,6 @@ stop() ->
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    lager:start(),  %% ok testing, remain or go?
-    lager:set_loglevel(lager_console_backend, debug),
-
     case application:get_env(arygon_nfc, device) of
 	{ok,Device} when is_list(Device) ->
 	    start_link([{device,Device}]);
@@ -205,10 +202,17 @@ start_link(Args) ->
 %% @end
 %%--------------------------------------------------------------------
 init(Args) ->
+    lager:start(),  %% ok testing, remain or go?
     Device = proplists:get_value(device, Args, "/dev/ttyUSB0"),
     Baud = proplists:get_value(baud, Args, 9600),
     Reopen_Timer = erlang:start_timer(100, self(), open_device),
     Reopen_Ival = proplists:get_value(reopen_ival, Args, 20*1000),
+    case proplists:get_bool(debug, Args) of
+	true ->
+	    lager:set_loglevel(lager_console_backend, debug);
+	_ ->
+	    ok
+    end,
     {ok,
      #state{
        device = Device,
@@ -302,7 +306,7 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 
 handle_info({'DOWN',Ref,process,_Pid,_Reason}, State) ->
-    ?debug("subscriber crashed reason=~p", [_Reason]),
+    lager:debug("subscriber crashed reason=~p", [_Reason]),
     case lists:keytake(Ref, #subscription.mon, State#state.sub_list) of
 	false ->
 	    {noreply, State};
@@ -322,39 +326,41 @@ handle_info({timeout,Ref,open_device}, State)
 	Error ->
 	    %% FIXME: in the case of enoent then we could use fnotify
 	    %% to notify when the device is created ! (at least on mac os x)
-	    ?error("unable to open device ~s: ~p", [State#state.device,Error]),
+	    lager:error("unable to open device ~s: ~p",
+			[State#state.device,Error]),
 	    Reopen_Timer = erlang:start_timer(State#state.reopen_ival,
 					      self(), open_device),
 	    {noreply, State#state { reopen_timer = Reopen_Timer }}
     catch
 	error:Reason ->
-	    ?error("unable to open device ~s: ~p",
-		   [State#state.device,Reason]),
+	    lager:error("unable to open device ~s: ~p",
+			[State#state.device,Reason]),
 	    Reopen_Timer = erlang:start_timer(State#state.reopen_ival,
 					      self(), open_device),
 	    {noreply, State#state { reopen_timer = Reopen_Timer }}
     end;
 handle_info({uart,Port,Line}, State) when Port =:= State#state.uart ->
-    ?debug("handle_info uart data ~p", [Line]),
+    lager:debug("handle_info uart data ~p", [Line]),
     Line1 = strip_nl(Line),
     {noreply, process_line(Line1, State)};
 handle_info({uart_error,Port,Reason}, State) when Port =:= State#state.uart ->
     if Reason =:= enxio ->
-	    ?error("uart error ~p device ~s unplugged?", 
-		   [Reason,State#state.device]);
+	    lager:error("uart error ~p device ~s unplugged?", 
+			[Reason,State#state.device]);
        true ->
-	    ?error("uart error ~p for device ~s", [Reason,State#state.device])
+	    lager:error("uart error ~p for device ~s", 
+			[Reason,State#state.device])
     end,
     {noreply, State};
 handle_info({uart_closed,Port}, State) when Port =:= State#state.uart ->
     uart:close(Port),
-    ?error("uart close device ~s will retry", [State#state.device]),
+    lager:error("uart close device ~s will retry", [State#state.device]),
     Reopen_Timer = erlang:start_timer(State#state.reopen_ival,
 				      self(), open_device),
     notify(device_closed,State),
     {noreply, State#state { uart=undefined,reopen_timer = Reopen_Timer }};
 handle_info(_Info, State) ->
-    ?debug("handle_info got ~p", [_Info]),
+    lager:debug("handle_info got ~p", [_Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -450,7 +456,7 @@ demon(Ref) ->
     end.
 
 run(Cmds=[Cmd|_],State) ->
-    ?debug("execute cmd: ~p", [Cmd]),
+    lager:debug("execute cmd: ~p", [Cmd]),
     run_(Cmds,State);
 run([], State) ->
     run_([],State).
@@ -466,13 +472,13 @@ run_(Cmds0=[{load,I}|Cmds1], State) when ?is_page(I) ->
     end;
 run_([{set,I,Y}|Cmds],State) when ?is_page(I), is_integer(Y) ->
     A = array:set(I, Y, State#state.array),
-    ?debug("A[~w] = ~8.16.0B", [I,Y]),
+    lager:debug("A[~w] = ~8.16.0B", [I,Y]),
     run(Cmds, State#state { array = A });
 
 run_([{copy,I,J}|Cmds],State) when ?is_page(I), ?is_page(J) ->
     Y = array:get(I, State#state.array),    
     A = array:set(J, Y, State#state.array),
-    ?debug("A[~w] = ~8.16.0B", [J,Y]),
+    lager:debug("A[~w] = ~8.16.0B", [J,Y]),
     run(Cmds, State#state { array = A });
 run_([{ite,Test,Then,Else}|Cmds],State) ->
     case eval(Test,State) of
@@ -491,7 +497,7 @@ run_([{update,I,Value}|Cmds], State) when ?is_page(I), is_integer(Value) ->
     Y0 = array:get(I, State#state.array),
     Y = (Y0+Value) band 16#ffffffff,
     A = array:set(I, Y, State#state.array),
-    ?debug("A[~w] = ~8.16.0B", [I,Y]),
+    lager:debug("A[~w] = ~8.16.0B", [I,Y]),
     run(Cmds, State#state { array = A });
 run_([ok | _Cmd],State) ->
     run_done(ok, State);
@@ -509,10 +515,10 @@ run_result([{load,I}|Cmds], Data, State) ->
     A2 = array:set(I+1, X1, A1),
     A3 = array:set(I+2, X2, A2),
     A4 = array:set(I+3, X3, A3),
-    ?debug("A[~w] = ~8.16.0B", [I,X0]),
-    ?debug("A[~w] = ~8.16.0B", [I+1,X1]),
-    ?debug("A[~w] = ~8.16.0B", [I+2,X2]),
-    ?debug("A[~w] = ~8.16.0B", [I+3,X3]),
+    lager:debug("A[~w] = ~8.16.0B", [I,X0]),
+    lager:debug("A[~w] = ~8.16.0B", [I+1,X1]),
+    lager:debug("A[~w] = ~8.16.0B", [I+2,X2]),
+    lager:debug("A[~w] = ~8.16.0B", [I+3,X3]),
     run(Cmds, State#state { cmd_list=Cmds, array=A4 });
 run_result([{save,_I}|Cmds], [], State) ->
     run(Cmds, State#state { cmd_list=Cmds });
@@ -542,7 +548,7 @@ eval({neq,I,Value}, State) when ?is_page(I), is_integer(Value) ->
     array:get(I, State#state.array) =/= Value.
 
 send_command(Uart, Command) ->
-    ?debug("uart command: ~s", [Command]),    
+    lager:debug("uart command: ~s", [Command]),    
     uart:send(Uart, Command).
 
 play(Status) ->
