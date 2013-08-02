@@ -78,7 +78,7 @@ client_loop(Mon,CardID,Ref) ->
     receive
 	{timeout,Ref,{next,CardID}} ->
 	    lager:debug("NEXT"),
-	    command("0p"),
+	    command("0s"),
 	    Ref1 = erlang:start_timer(2000,self(),{clear,CardID}),
 	    client_loop(Mon,CardID,Ref1);
 
@@ -91,7 +91,7 @@ client_loop(Mon,CardID,Ref) ->
 	    
 	{nfc,Mon,{select,CardID}} ->
 	    lager:debug("SELECT OLD"),
-	    command("0p"),
+	    command("0s"),
 	    client_loop(Mon,CardID,Ref);
 
 	{nfc,Mon,{select,NewCardID}} ->
@@ -118,7 +118,7 @@ client_loop(Mon,CardID,Ref) ->
 
 	{nfc,Mon,device_open} ->
 	    lager:debug("DEVICE OPEN"),
-	    command("0p"),
+	    command("0s"),
 	    client_loop(Mon,"",undefined);
 
 	{nfc,Mon,device_closed} ->
