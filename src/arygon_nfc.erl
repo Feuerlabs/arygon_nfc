@@ -26,8 +26,6 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--include_lib("lager/include/log.hrl").
-
 -define(SERVER, ?MODULE). 
 
 -record(subscription,
@@ -180,7 +178,7 @@ start_link() ->
 	undefined ->
 	    start_link([]);
 	Other ->
-	    ?critical("warning: bad device value given [~p]", [Other])
+	    lager:critical("warning: bad device value given [~p]", [Other])
     end.
 
 start_link(Args) ->
@@ -319,7 +317,7 @@ handle_info({timeout,Ref,open_device}, State)
 				       {packet,line},
 				       {csize,8},{parity,none},{stopb,1}]) of
 	{ok,U} ->
-	    ?notice("uart device ~s ready", [State#state.device]),
+	    lager:notice("uart device ~s ready", [State#state.device]),
 	    notify(device_open,State),
 	    {noreply, State#state { uart=U, reopen_timer=undefined }};
 
@@ -421,15 +419,15 @@ process_line("FF0000"++[L1,L0|HexBinary], State) ->
 		    io:format("Result data: [~s]\n", [Data]),
 		    run_result(State#state.cmd_list, Data, State);
 		_ ->
-		    ?warning("unknown data: [~s]", [HexBinary]),
+		    lager:warning("unknown data: [~s]", [HexBinary]),
 		    State
 	    end;
        true ->
-	    ?warning("length mismatch len=~p, format ~p",[Len,HexBinary]),
+	    lager:warning("length mismatch len=~p, format ~p",[Len,HexBinary]),
 	    State
     end;
 process_line(Data, State) ->
-    ?warning("Unknown data: [~s]", [Data]),
+    lager:warning("Unknown data: [~s]", [Data]),
     State.
 
 notify(Message, State) ->
@@ -440,8 +438,8 @@ notify(Message, State) ->
     State.
 
 select(NTargets,Target,SendRes,SelRes,IDLen,CardID,State) ->
-    ?notice("card: ~s", [CardID]),
-    ?info("initialize targets: ~w, target=~w, sens=~s, sel=~s, len=~w",
+    lager:notice("card: ~s", [CardID]),
+    lager:info("initialize targets: ~w, target=~w, sens=~s, sel=~s, len=~w",
 	  [NTargets, Target, SendRes, SelRes, IDLen]),
     notify({select,CardID}, State#state { card = CardID }).
 
